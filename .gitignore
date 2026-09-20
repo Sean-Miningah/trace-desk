@@ -16,3 +16,12 @@
 
 # Go workspace file
 go.work
+
+# Build output
+/bin/
+
+# runtime data (parquet store)
+/data/
+
+# compiled eBPF objects
+/.bpf.o
