@@ -92,7 +92,7 @@ func runCmd(args []string) error {
 	// Drain subscribers: count what each saw
 	var stored, shown uint64
 	doneStore := drain(store, &stored)
-	doneUI := drain(ui, &show)
+	doneUI := drain(ui, &shown)
 	<-doneStore
 	<-doneUI
 
