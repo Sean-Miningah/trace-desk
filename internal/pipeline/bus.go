@@ -20,38 +20,38 @@ const (
 )
 
 type subscriber struct {
-	name string
-	ch chan core.Event
+	name   string
+	ch     chan core.Event
 	policy Policy
-	drops atomic.Uint64
+	drops  atomic.Uint64
 }
 
-func (s *subscriber) deliver (ev core.Event) {
+func (s *subscriber) deliver(ev core.Event) {
 	switch s.policy {
-		case Block:
-			s.ch <- ev
-		case DropNewest:
-			select {
-			case s.ch <- ev:
-			default:
-				s.drops.Add(1)
-			}
+	case Block:
+		s.ch <- ev
+	case DropNewest:
+		select {
+		case s.ch <- ev: // try to send event if buffer is not full
+		default: // buffer is full, drop the event
+			s.drops.Add(1)
+		}
 	}
 }
 
 // Bus i an in-process channel fan-out.
 type Bus struct {
-	mu sync.RWMutex
+	mu   sync.RWMutex
 	subs []*subscriber
 }
 
 func NewBus() *Bus { return &Bus{} }
 
 // Register a named subscriber with its own delivery policy, returning and recieve end.
-func (b *Bus) Subscribe(name string, buffer int, policy Policy) <- chan core.Event {
+func (b *Bus) Subscribe(name string, buffer int, policy Policy) <-chan core.Event {
 	s := &subscriber{
-		name: name,
-		ch: make(chan core.Event, buffer),
+		name:   name,
+		ch:     make(chan core.Event, buffer),
 		policy: policy,
 	}
 	b.mu.Lock()
@@ -73,7 +73,7 @@ func (b *Bus) Drops(name string) uint64 {
 }
 
 // Publish sends an event to all subscribers.
-func (b *Bus) Publish(ev core.Event){
+func (b *Bus) Publish(ev core.Event) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for _, s := range b.subs {
@@ -85,13 +85,13 @@ func (b *Bus) Run(ctx context.Context, in <-chan core.Event) {
 	defer b.closeAll()
 	for {
 		select {
-			case <-ctx.Done():
+		case <-ctx.Done():
+			return
+		case ev, ok := <-in:
+			if !ok {
 				return
-			case ev, ok := <-in:
-				if !ok {
-					return
-				}
-				b.Publish(ev)
+			}
+			b.Publish(ev)
 		}
 	}
 }
