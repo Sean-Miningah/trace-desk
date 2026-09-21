@@ -12,6 +12,7 @@ import (
 	"github.com/sean-miningah/trace-desk/internal/core"
 	"github.com/sean-miningah/trace-desk/internal/pipeline"
 	"github.com/sean-miningah/trace-desk/internal/source/fake"
+	"github.com/sean-miningah/trace-desk/tui"
 )
 
 const version = "0.1.0"
@@ -30,6 +31,11 @@ func main() {
 	case "version":
 		slog.Info("tracedesk", "version", version)
 		return
+	case "tui":
+		if err := tuiCmd(os.Args[2:]); err != nil {
+			slog.Error("tui", "error", err)
+			os.Exit(1)
+		}
 	case "":
 	default:
 		usage()
@@ -110,4 +116,37 @@ func drain(ch <-chan core.Event, counter *uint64) <-chan struct{} {
 		}
 	}()
 	return done
+}
+
+func tuiCmd(args []string) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	src := fake.New(50 * time.Millisecond)
+	raw, err := src.Events(ctx)
+	if err != nil {
+		return err
+	}
+	norm := pipeline.NewNormalizer()
+	bus := pipeline.NewBus()
+	sub := bus.Subscribe("tui", 128, pipeline.DropNewest)
+
+	normalized := make(chan core.Event, 256)
+	go func() {
+		defer close(normalized)
+		for r := range raw {
+			normalized <- norm.Normalize(pipeline.Raw{
+				Type:        r.Type,
+				PID:         r.PID,
+				PPID:        r.PPID,
+				UID:         r.UID,
+				GID:         r.GID,
+				ProcessName: r.ProcessName,
+				Data:        r.Data,
+				When:        r.Timestamp,
+			})
+		}
+	}()
+	go bus.Run(ctx, normalized)
+	return tui.Run(sub, func() uint64 { return bus.Drops("tui") })
 }
