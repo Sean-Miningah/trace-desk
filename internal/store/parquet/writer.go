@@ -2,8 +2,12 @@ package parquet
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/parquet-go/parquet-go"
 	"github.com/sean-miningah/trace-desk/internal/core"
 )
 
@@ -61,9 +65,37 @@ func (w *Writer) Write(_ context.Context, batch []core.Event) error {
 				})
 		}
 		day := time.Now().UTC().Format("2006-01-02")
-		// if err := flush(w, day, "process", procs); err != nil {
-		// 	return err
-		// }
-
+		if err := flush(w, day, "process", procs); err != nil {
+			return err
+		}
+		if err := flush(w, day, "file", filez); err != nil {
+			return err
+		}
+		if err := flush(w, day, "network", nets); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+func flush[T any](w *Writer, day, category string, rows []T) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	dir := filepath.Join(w.dir, day, category)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	w.seq[category]++
+	name := filepath.Join(dir, fmt.Sprintf("%06d.parquet", w.seq[category]))
+	f, err := os.Create(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	pw := parquet.NewGenericWriter[T](f, parquet.Compression(&parquet.Zstd))
+	if _, err := pw.Write(rows); err != nil {
+		return err
+	}
+	return pw.Close() // flushes buffers + footer
 }

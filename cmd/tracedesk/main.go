@@ -12,6 +12,7 @@ import (
 	"github.com/sean-miningah/trace-desk/internal/core"
 	"github.com/sean-miningah/trace-desk/internal/pipeline"
 	"github.com/sean-miningah/trace-desk/internal/source/fake"
+	pq "github.com/sean-miningah/trace-desk/internal/store/parquet"
 	"github.com/sean-miningah/trace-desk/tui"
 )
 
@@ -34,6 +35,11 @@ func main() {
 	case "tui":
 		if err := tuiCmd(os.Args[2:]); err != nil {
 			slog.Error("tui", "error", err)
+			os.Exit(1)
+		}
+	case "query":
+		if err := queryCmd(os.Args[2:]); err != nil {
+			slog.Error("query", "error", err)
 			os.Exit(1)
 		}
 	case "":
@@ -149,4 +155,21 @@ func tuiCmd(args []string) error {
 	}()
 	go bus.Run(ctx, normalized)
 	return tui.Run(sub, func() uint64 { return bus.Drops("tui") })
+}
+
+func queryCmd(args []string) error {
+	fs := flag.NewFlagSet("query", flag.ExitOnError)
+	dir := fs.String("data", "data", "parquet data dir")
+	process := fs.String("process", "", "filter by process name")
+	_ = fs.Parse(args)
+
+	q := core.Query{Process: *process}
+	rows, err := pq.NewReader(*dir).Query(context.Background(), q)
+	if err != nil {
+		return err
+	}
+	for _, e := range rows {
+		fmt.Printf("%-16s pid=%-6d %s\n", e.Type, e.PID, e.ProcessName)
+	}
+	return nil
 }
