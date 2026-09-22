@@ -25,3 +25,6 @@ go.work
 
 # compiled eBPF objects
 /.bpf.o
+
+# host-specific CO-RE header, regenerate with `make headers`
+internal/source/ebpf/vmlinux.h
