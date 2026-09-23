@@ -11,6 +11,7 @@ import (
 
 	"github.com/sean-miningah/trace-desk/internal/core"
 	"github.com/sean-miningah/trace-desk/internal/pipeline"
+	ebpfsrc "github.com/sean-miningah/trace-desk/internal/source/ebpf"
 	"github.com/sean-miningah/trace-desk/internal/source/fake"
 	pq "github.com/sean-miningah/trace-desk/internal/store/parquet"
 	"github.com/sean-miningah/trace-desk/tui"
@@ -56,6 +57,7 @@ func runCmd(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	source := fs.String("source", "fake", "event source: fake|ebpf")
 	dur := fs.Duration("duration", 5*time.Second, "how long to run")
+	data := fs.String("data", "data", "parquet data dir")
 	_ = fs.Parse(args)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -67,10 +69,15 @@ func runCmd(args []string) error {
 	switch *source {
 	case "fake":
 		src = fake.New(0)
+	case "ebpf":
+		src = ebpfsrc.New()
 	default:
 		return fmt.Errorf("unknown source: %s", *source)
 	}
 	defer src.Close()
+
+	store := pq.NewWriter(*data)
+	defer store.Close()
 
 	raw, err := src.Events(ctx)
 	if err != nil {
@@ -79,7 +86,7 @@ func runCmd(args []string) error {
 
 	norm := pipeline.NewNormalizer()
 	bus := pipeline.NewBus()
-	store := bus.Subscribe("store", 1024, pipeline.Block)
+	storeCh := bus.Subscribe("store", 1024, pipeline.Block)
 	ui := bus.Subscribe("ui", 64, pipeline.DropNewest)
 
 	//Normalize raw -> canonical events, feed the bus.
@@ -103,7 +110,7 @@ func runCmd(args []string) error {
 
 	// Drain subscribers: count what each saw
 	var stored, shown uint64
-	doneStore := drain(store, &stored)
+	doneStore := persist(ctx, storeCh, store, &stored)
 	doneUI := drain(ui, &shown)
 	<-doneStore
 	<-doneUI
@@ -120,6 +127,33 @@ func drain(ch <-chan core.Event, counter *uint64) <-chan struct{} {
 		for range ch {
 			*counter++
 		}
+	}()
+	return done
+}
+
+func persist(ctx context.Context, ch <-chan core.Event, store core.EventStore, counter *uint64) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		const batchSize = 512
+		batch := make([]core.Event, 0, batchSize)
+		flush := func() {
+			if len(batch) == 0 {
+				return
+			}
+			if err := store.Write(ctx, batch); err != nil {
+				slog.Error("store write", "error", err)
+			}
+			batch = batch[:0]
+		}
+		for ev := range ch {
+			*counter++
+			batch = append(batch, ev)
+			if len(batch) >= batchSize {
+				flush()
+			}
+		}
+		flush()
 	}()
 	return done
 }

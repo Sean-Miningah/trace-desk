@@ -64,19 +64,22 @@ func (w *Writer) Write(_ context.Context, batch []core.Event) error {
 					RemotePort:  uint32(d.RemoteAddr.Port()),
 				})
 		}
-		day := time.Now().UTC().Format("2006-01-02")
-		if err := flush(w, day, "process", procs); err != nil {
-			return err
-		}
-		if err := flush(w, day, "file", filez); err != nil {
-			return err
-		}
-		if err := flush(w, day, "network", nets); err != nil {
-			return err
-		}
+	}
+	day := time.Now().UTC().Format("2006-01-02")
+	if err := flush(w, day, "process", procs); err != nil {
+		return err
+	}
+	if err := flush(w, day, "file", filez); err != nil {
+		return err
+	}
+	if err := flush(w, day, "network", nets); err != nil {
+		return err
 	}
 	return nil
 }
+
+// Close implements core.EventStore. Writer flushes per Write; nothing to release.
+func (w *Writer) Close() error { return nil }
 
 func flush[T any](w *Writer, day, category string, rows []T) error {
 	if len(rows) == 0 {

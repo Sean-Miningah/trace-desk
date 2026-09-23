@@ -52,7 +52,7 @@ func (s *Source) Events(ctx context.Context) (<-chan core.Event, error) {
 // Close impliments core.EventSource
 func (s *Source) Close() error { return nil }
 
-var procs = []string{"firefox", "curl", "bash", "sshd", "cron"}
+var procs = []string{"firefoxedfsdf", "curl", "bash", "sshd", "cron"}
 
 func (s *Source) sample(id uint64) core.Event {
 	name := procs[s.rng.Intn(len(procs))]

@@ -17,7 +17,7 @@ func NewReader(dir string) *Reader { return &Reader{dir: dir} }
 
 // Query impliments core.QueryEngine
 func (r *Reader) Query(_ context.Context, q core.Query) ([]core.Event, error) {
-	paths, err := filepath.Glob(filepath.Join(r.dir, "*", "process", "*,parquet"))
+	paths, err := filepath.Glob(filepath.Join(r.dir, "*", "process", "*.parquet"))
 	if err != nil {
 		return nil, err
 	}
